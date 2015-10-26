@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 from archive import archive
 from passthrough import PassThrough
@@ -9,18 +9,22 @@ from time import sleep
 from threading import Thread
 from datetime import datetime
 
+java = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    'jre1.8.0_65','bin','java')
+
 class Server:
-    def __init__(self,folder):
+
+    def __init__(self, folder, jarfile='minecraft_server.jar'):
         self.archivefolder = folder
         self.foldername = 'minecraft_server'
         #self.runningfolder = '/dev/shm'
         self.runningfolder = '/tmp'
         self.isRunning = False
         self.passthrough = PassThrough(
-            #['java','-Xmx1024M','-Xms1024M',
-            ['java','-Xmx512M','-Xms512M',
-             '-jar','minecraft_server.jar','nogui'],
+            [java, '-Xmx2048M', '-Xms2048M',
+             '-jar', jarfile, 'nogui'],
             cwd=join(self.runningfolder,self.foldername))
+
     def CopyToWorking(self):
         try:
             shutil.rmtree(join(self.runningfolder,self.foldername))
@@ -31,14 +35,17 @@ class Server:
         shutil.copytree(
             join(self.archivefolder,mostrecent,self.foldername),
             join(self.runningfolder,self.foldername))
+
     def StopAutoSave(self,*args):
         with WaitForLine(self.passthrough,'Turned off world auto-saving'):
             self.passthrough.UserInput('save-off\n')
         with WaitForLine(self.passthrough,'Saved the world'):
             self.passthrough.UserInput('save-all\n')
+
     def ResumeAutoSave(self,*args):
         with WaitForLine(self.passthrough,'Turned on world auto-saving'):
             self.passthrough.UserInput('save-on\n')
+
     def DailyBackup(self,*args):
         print 'Performing daily backup'
         if self.running:
@@ -48,7 +55,9 @@ class Server:
             shutil.rmtree(join(self.archivefolder,'hourly'))
         if self.running:
             self.ResumeAutoSave()
+
         print 'Daily backup complete'
+
     def HourlyBackup(self,*args):
         print 'Performing hourly save'
         if self.running:
@@ -58,6 +67,7 @@ class Server:
         if self.running:
             self.ResumeAutoSave()
         print 'Hourly save complete'
+
     def run(self):
         self.CopyToWorking()
         self.passthrough.AddUserCond('^hourly$',self.HourlyBackup)
@@ -68,16 +78,20 @@ class Server:
         self.running = False
         self.HourlyBackup()
 
+
 class BackupThread(Thread):
+
     def __init__(self,server,*args,**kwargs):
         super(BackupThread,self).__init__()
         self.server = server
         self.daemon = True
         self.start()
+
     def WaitForHour(self):
         t = datetime.now()
         sec = 60*t.minute + t.second
         sleep(3600-sec)
+
     def run(self):
         while True:
             self.WaitForHour()
@@ -87,10 +101,12 @@ class BackupThread(Thread):
                 self.server.HourlyBackup()
 
 class WaitForLine:
+
     def __init__(self,passthrough,regex):
         self.done = False
         self.regex = regex
         self.passthrough = passthrough
+
     def __enter__(self):
         self.done = False
         def temp(line):
@@ -98,6 +114,7 @@ class WaitForLine:
             return True
         self.passthrough.AddProgCond(self.regex,temp,count=1)
         return self
+
     def __exit__(self,*args):
         while not self.done:
             sleep(0.1)
@@ -108,6 +125,9 @@ if __name__=='__main__':
     parser.add_argument('-a','--archive',dest='folder',
                         action='store',default=os.getcwd(),
                         help="The archive folder to be used.")
+    parser.add_argument('-j','--jar',dest='jarfile',
+                        action='store',default='minecraft_server.jar',
+                        help="The name of the jar to be run")
     args = parser.parse_args()
-    s = Server(args.folder)
+    s = Server(args.folder, args.jarfile)
     s.run()
